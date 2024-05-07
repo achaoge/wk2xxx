@@ -9,6 +9,8 @@
  *   DEMO Version: 2.4 Data: 2022-07-24
  *   DESCRIPTION: Implements an interface for the wk2xxx of spi interface
  *   WKIC Ltd. By  Xu XunWei Tech  
+ *   
+ *   Modified by achaoge for linux 6
  */
 
 #include <linux/init.h>
@@ -39,7 +41,7 @@
 #include <uapi/linux/sched/types.h>
 
 #define DRIVER_DESC "SPI driver for SPI to UART chip WK2XXX"
-#define VERSION_DESC "V2.5 on 2024.02.15"
+#define VERSION_DESC "V2.5f on 2024.05.07"
 #define DRIVER_AUTHOR "Xuxunwei/B.Eschrich"
 
 /*************The debug control **********************************/
@@ -1439,7 +1441,7 @@ static void conf_wk2xxx_subport(struct uart_port *port)
 }
 
 static void wk2xxx_termios(struct uart_port *port, struct ktermios *termios,
-			   struct ktermios *old)
+			   const struct ktermios *old)
 {
 	struct wk2xxx_one *one = to_wk2xxx_one(port, port);
 	struct wk2xxx_port *priv = dev_get_drvdata(port->dev);
@@ -1680,13 +1682,11 @@ static int wk2xxx_reset(struct device *dev)
 static int wk2xxx_spi_rstgpio_parse_dt(struct device *dev)
 {
 	struct wk2xxx_port *priv = dev_get_drvdata(dev);
-	enum of_gpio_flags rst_flags;
 	int ret;
 
 	dev_dbg(dev, "%s: enter\n", __func__);
 
-	ret = of_get_named_gpio_flags(dev->of_node, WK2XXX_GPIO_NAME_RESET, 0,
-				      &rst_flags);
+	ret = of_get_named_gpio(dev->of_node, WK2XXX_GPIO_NAME_RESET, 0);
 	if (!gpio_is_valid(ret) || ret == 0) {
 		dev_err(dev, "%s: Can't find gpio '%s'. error=%d\n", __func__,
 			WK2XXX_GPIO_NAME_RESET, ret);
@@ -1730,13 +1730,11 @@ error_gpio:
 static int wk2xxx_spi_csgpio_parse_dt(struct device *dev)
 {
 	struct wk2xxx_port *priv = dev_get_drvdata(dev);
-	enum of_gpio_flags flags;
 	int ret;
 
 	dev_dbg(dev, "%s: enter\n", __func__);
 
-	ret = of_get_named_gpio_flags(dev->of_node, WK2XXX_GPIO_NAME_CS, 0,
-				      &flags);
+	ret = of_get_named_gpio(dev->of_node, WK2XXX_GPIO_NAME_CS, 0);
 	if (!gpio_is_valid(ret) || ret == 0) {
 		dev_err(dev, "%s: Can't find gpio '%s'. error=%d\n", __func__,
 			WK2XXX_GPIO_NAME_CS, ret);
@@ -1769,13 +1767,11 @@ error_gpio:
 static int wk2xxx_spi_pwrgpio_parse_dt(struct device *dev)
 {
 	struct wk2xxx_port *priv = dev_get_drvdata(dev);
-	enum of_gpio_flags flags;
 	int ret;
 
 	dev_dbg(dev, "%s: start\n", __func__);
 
-	ret = of_get_named_gpio_flags(dev->of_node, WK2XXX_GPIO_NAME_POWER, 0,
-				      &flags);
+	ret = of_get_named_gpio(dev->of_node, WK2XXX_GPIO_NAME_POWER, 0);
 	if (!gpio_is_valid(ret) || ret == 0) {
 		dev_err(dev, "%s: Can't find OF '%s'. error=%d\n", __func__,
 			WK2XXX_GPIO_NAME_POWER, ret);
@@ -1808,13 +1804,11 @@ error_gpio:
 static int wk2xxx_spi_irq_parse_dt(struct device *dev)
 {
 	struct wk2xxx_port *priv = dev_get_drvdata(dev);
-	enum of_gpio_flags flags;
 	int ret, irq;
 
 	dev_dbg(dev, "%s: enter\n", __func__);
 
-	ret = of_get_named_gpio_flags(dev->of_node, WK2XXX_GPIO_NAME_IRQ, 0,
-				      &flags);
+	ret = of_get_named_gpio(dev->of_node, WK2XXX_GPIO_NAME_IRQ, 0);
 	if (!gpio_is_valid(ret) || ret == 0) {
 		dev_err(dev, "%s: Can't find OF '%s'. error=%d\n", __func__,
 			WK2XXX_GPIO_NAME_IRQ, ret);
@@ -1989,7 +1983,10 @@ static int wk2xxx_probe(struct spi_device *spi)
 			__func__, ret);
 		goto out_clk;
 	}
-	sched_setscheduler(priv->kworker_task, SCHED_FIFO, &sched_param);
+	if(sched_param.sched_priority > 1)
+		sched_set_fifo(priv->kworker_task);
+	else if(sched_param.sched_priority >=0)
+		sched_set_fifo_low(priv->kworker_task);
 
 	/**/
 	mutex_lock(&wk2xxxs_lock);
@@ -2108,17 +2105,17 @@ error_gpio:
 	return ret;
 }
 
-static int wk2xxx_remove(struct spi_device *spi)
+static void wk2xxx_remove(struct spi_device *spi)
 {
 	struct wk2xxx_port *priv = dev_get_drvdata(&spi->dev);
 	int i;
 
 	if (!priv)
-		return 0;
+		return;
 
 	if (!priv->init_done) {
 		devm_kfree(&spi->dev, priv);
-		return 0;
+		return;
 	}
 
 	dev_dbg(&spi->dev, "%s: Driver cleanup\n", __func__);
@@ -2172,7 +2169,7 @@ static int wk2xxx_remove(struct spi_device *spi)
 	devm_kfree(&spi->dev, priv);
 
 	dev_info(&spi->dev, "Driver removed\n");
-	return 0;
+	return;
 }
 
 static const struct of_device_id wkmic_spi_dt_match[] = {
